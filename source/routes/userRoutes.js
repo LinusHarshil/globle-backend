@@ -104,28 +104,30 @@ router.get("/verify-email/:token", async (req, res) => {
 
 router.post("/login", async (req, res) => {
   try {
-    const user = await User.findOne({ email: req.body.email });
+    const user = await User.findOne({
+      email: req.body.email,
+    });
 
     if (!user) {
-      return res.json({
-        message: "Invalid email or password",
+      return res.status(400).json({
         success: false,
+        message: "Invalid email or password",
       });
     }
 
     if (user.isSuspended) {
-      return res.json({
-        message: "account suspended",
+      return res.status(403).json({
         success: false,
+        message: "Account suspended",
       });
     }
 
     const isMatch = await bcrypt.compare(req.body.password, user.password);
 
     if (!isMatch) {
-      return res.json({
-        message: "Invalid email or password",
+      return res.status(400).json({
         success: false,
+        message: "Invalid email or password",
       });
     }
 
@@ -140,25 +142,23 @@ router.post("/login", async (req, res) => {
       }
     );
 
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-      domain: ".onrender.com",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
     return res.status(200).json({
       success: true,
+      message: "Login successful",
       token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
     });
   } catch (error) {
     console.log(error);
 
     return res.status(500).json({
       success: false,
-      message: "Login Failed",
+      message: "Login failed",
     });
   }
 });
@@ -533,17 +533,9 @@ router.patch(
   }
 );
 router.post("/logout", (req, res) => {
-  res.clearCookie("token", {
-    httpOnly: true,
-    secure: true,
-    sameSite: "none",
-    domain: ".onrender.com",
-    path: "/",
-  });
-
-  return res.json({
+  return res.status(200).json({
     success: true,
-    message: "Logged out",
+    message: "Logged out successfully",
   });
 });
 export default router;
