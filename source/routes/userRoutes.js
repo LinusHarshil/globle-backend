@@ -107,33 +107,57 @@ router.post("/login", async (req, res) => {
     const user = await User.findOne({ email: req.body.email });
 
     if (!user) {
-      res.json({ message: "Invalid email or password", success: false });
-      return;
-    }
-    if (user.isSuspended) {
-      return res.json({ message: "account suspended", success: false });
-    }
-    const isMatch = await bcrypt.compare(req.body.password, user.password);
-    if (!isMatch) {
-      res.json({ message: "Invalid email or password", success: false });
-      return;
-    } else {
-      const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, {
-        expiresIn: "7d",
+      return res.json({
+        message: "Invalid email or password",
+        success: false,
       });
-      res.cookie("token", token, {
-        httpOnly: true,
-        secure: false,
-        sameSite: "lax",
-      });
+    }
 
-      return res.status(200).json({
-        success: true,
-        token,
+    if (user.isSuspended) {
+      return res.json({
+        message: "account suspended",
+        success: false,
       });
     }
-  } catch {
-    return res.send("Login Failed");
+
+    const isMatch = await bcrypt.compare(req.body.password, user.password);
+
+    if (!isMatch) {
+      return res.json({
+        message: "Invalid email or password",
+        success: false,
+      });
+    }
+
+    const token = jwt.sign(
+      {
+        id: user._id,
+        role: user.role,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "7d",
+      }
+    );
+
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return res.status(200).json({
+      success: true,
+      token,
+    });
+  } catch (error) {
+    console.log(error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Login Failed",
+    });
   }
 });
 router.post("/forgot-password", async (req, res) => {
@@ -507,9 +531,13 @@ router.patch(
   }
 );
 router.post("/logout", (req, res) => {
-  res.clearCookie("token");
+  res.clearCookie("token", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",
+  });
 
-  res.json({
+  return res.json({
     success: true,
     message: "Logged out",
   });
