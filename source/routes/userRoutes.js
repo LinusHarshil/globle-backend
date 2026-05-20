@@ -24,7 +24,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-router.post("/users/register", async (req, res) => {
+router.post("/register", async (req, res) => {
   try {
     const existingUser = await User.findOne({ email: req.body.email });
     const hashedPassword = await bcrypt.hash(req.body.password, 10);
@@ -34,7 +34,7 @@ router.post("/users/register", async (req, res) => {
     }
     const token = crypto.randomBytes(32).toString("hex");
     if (existingUser && !existingUser.isVerified) {
-      const verifyLink = `http://localhost:5000/api/users/verify-email/${token}`;
+      const verifyLink = `https://globlelms.vercel.app/verify-email/${token}`;
       const user = await User.findByIdAndUpdate(existingUser._id, {
         name: name,
         password: hashedPassword,
@@ -61,7 +61,7 @@ router.post("/users/register", async (req, res) => {
         isVerified: false,
         verificationToken: token,
       });
-      const verifyLink = `http://localhost:5000/api/users/verify-email/${token}`;
+      const verifyLink = `https://globlelms.vercel.app/verify-email/${token}`;
 
       await transporter.sendMail({
         from: email_user,
@@ -84,7 +84,7 @@ router.post("/users/register", async (req, res) => {
     return res.status(500).send(error.message);
   }
 });
-router.get("/users/verify-email/:token", async (req, res) => {
+router.get("/verify-email/:token", async (req, res) => {
   const token = req.params.token;
   const checkToken = await User.findOne({ verificationToken: token });
   if (!checkToken) {
@@ -102,7 +102,7 @@ router.get("/users/verify-email/:token", async (req, res) => {
   res.send("email verified succesfully");
 });
 
-router.post("/users/login", async (req, res) => {
+router.post("/login", async (req, res) => {
   try {
     const user = await User.findOne({ email: req.body.email });
 
@@ -147,7 +147,7 @@ router.post("/forgot-password", async (req, res) => {
   //token generation
   const token = crypto.randomBytes(32).toString("hex");
 
-  const fpLink = `http://localhost:3000/reset-password/${token}`;
+  const fpLink = `https://globlelms.vercel.app/reset-password/${token}`;
   const updatedUser = await User.findByIdAndUpdate(
     user._id,
     {
