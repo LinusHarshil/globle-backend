@@ -11,7 +11,8 @@ const app = express();
 
 app.use(
   cors({
-    origin: "https://globle-igahu0e0i-linusharshils-projects.vercel.app",
+    origin: [  "https://globlelms.vercel.app",
+      "https://globle-igahu0e0i-linusharshils-projects.vercel.app",]
     credentials: true,
   })
 );
