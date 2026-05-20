@@ -4,17 +4,18 @@ import dotenv from "dotenv";
 import express from "express";
 import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer";
-
 import authMiddleware from "../middleware/authMiddleware.js";
-
+import roleMiddleware from "../middleware/roleMiddleware.js";
+import Course from "../models/Courses.js";
+import Enrollment from "../models/Enrollment.js";
+import Lesson from "../models/Lesson.js";
 import User from "../models/User.js";
-
 dotenv.config();
-
 const router = express.Router();
 
-/* ================= EMAIL ================= */
-
+const email_user = process.env.EMAIL_USER;
+const email_pass = process.env.EMAIL_PASS;
+//nodemailer setup
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -23,159 +24,108 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-/* ================= REGISTER ================= */
-
 router.post("/register", async (req, res) => {
   try {
-    const existingUser = await User.findOne({
-      email: req.body.email,
-    });
-
+    const existingUser = await User.findOne({ email: req.body.email });
     const hashedPassword = await bcrypt.hash(req.body.password, 10);
-
     const name = req.body.name;
-
     if (existingUser && existingUser.isVerified) {
-      return res.status(400).json({
-        success: false,
-        message: "User already exists",
-      });
+      return res.status(400).send("this user already exists");
     }
-
     const token = crypto.randomBytes(32).toString("hex");
-
     if (existingUser && !existingUser.isVerified) {
-      await User.findByIdAndUpdate(existingUser._id, {
-        name,
+      const verifyLink = `https://globlelms.vercel.app/verify-email/${token}`;
+      const user = await User.findByIdAndUpdate(existingUser._id, {
+        name: name,
         password: hashedPassword,
         isVerified: false,
         verificationToken: token,
       });
-
+      await transporter.sendMail({
+        from: email_user,
+        to: req.body.email,
+        subject: "Verify your Account",
+        html: `
+      <h1>Welcome to Globle Academy</h1>
+      <p>Hello ${name}, Below is the link for the verification of your email for the registration</p>
+      <a href="${verifyLink}">
+      Verify Email
+      </a>`,
+      });
+      return res.send("Verification Email Sent");
+    } else {
+      const user = await User.create({
+        name: name,
+        email: req.body.email,
+        password: hashedPassword,
+        isVerified: false,
+        verificationToken: token,
+      });
       const verifyLink = `https://globlelms.vercel.app/verify-email/${token}`;
 
       await transporter.sendMail({
-        from: process.env.EMAIL_USER,
+        from: email_user,
         to: req.body.email,
-        subject: "Verify your account",
+        subject: "verify your globle student account",
         html: `
-          <h1>Welcome to Globle Academy</h1>
-
-          <p>Hello ${name}, verify your account below:</p>
-
-          <a href="${verifyLink}">
-            Verify Email
-          </a>
-        `,
+      <h1>Welcome to Globle Academy</h1>
+      <p>Hello ${name},Below is the link for the verification of your email for the registration</p>
+      <a href="${verifyLink}">
+      Verify Email
+      </a>
+      
+      `,
       });
-
-      return res.status(200).json({
-        success: true,
-        message: "Verification email sent",
+      return res.send({
+        message: "registered succesfully, check email",
       });
     }
-
-    await User.create({
-      name,
-      email: req.body.email,
-      password: hashedPassword,
-      isVerified: false,
-      verificationToken: token,
-    });
-
-    const verifyLink = `https://globlelms.vercel.app/verify-email/${token}`;
-
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: req.body.email,
-      subject: "Verify your account",
-      html: `
-        <h1>Welcome to Globle Academy</h1>
-
-        <p>Hello ${name}, verify your account below:</p>
-
-        <a href="${verifyLink}">
-          Verify Email
-        </a>
-      `,
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: "Registered successfully, check your email",
-    });
   } catch (error) {
-    console.log(error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Registration failed",
-    });
+    return res.status(500).send(error.message);
   }
 });
-
-/* ================= VERIFY EMAIL ================= */
-
 router.get("/verify-email/:token", async (req, res) => {
-  try {
-    const token = req.params.token;
-
-    const user = await User.findOne({
-      verificationToken: token,
-    });
-
-    if (!user) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid token",
-      });
-    }
-
-    await User.findByIdAndUpdate(user._id, {
+  const token = req.params.token;
+  const checkToken = await User.findOne({ verificationToken: token });
+  if (!checkToken) {
+    res.send("token wrong");
+  }
+  const userId = checkToken._id;
+  const updatedUser = await User.findByIdAndUpdate(
+    userId,
+    {
       isVerified: true,
       verificationToken: null,
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: "Email verified successfully",
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "Verification failed",
-    });
-  }
+    },
+    { new: true }
+  );
+  res.send("email verified succesfully");
 });
-
-/* ================= LOGIN ================= */
 
 router.post("/login", async (req, res) => {
   try {
-    const user = await User.findOne({
-      email: req.body.email,
-    });
+    const user = await User.findOne({ email: req.body.email });
 
     if (!user) {
-      return res.status(401).json({
-        success: false,
+      return res.json({
         message: "Invalid email or password",
+        success: false,
       });
     }
 
     if (user.isSuspended) {
-      return res.status(403).json({
+      return res.json({
+        message: "account suspended",
         success: false,
-        message: "Account suspended",
       });
     }
 
     const isMatch = await bcrypt.compare(req.body.password, user.password);
 
     if (!isMatch) {
-      return res.status(401).json({
-        success: false,
+      return res.json({
         message: "Invalid email or password",
+        success: false,
       });
     }
 
@@ -194,6 +144,7 @@ router.post("/login", async (req, res) => {
       httpOnly: true,
       secure: true,
       sameSite: "none",
+      domain: ".onrender.com",
       path: "/",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
@@ -207,67 +158,55 @@ router.post("/login", async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Login failed",
+      message: "Login Failed",
     });
   }
 });
-
-/* ================= FORGOT PASSWORD ================= */
-
 router.post("/forgot-password", async (req, res) => {
-  try {
-    const user = await User.findOne({
-      email: req.body.email,
-    });
+  const user = await User.findOne({ email: req.body.email });
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "Email invalid",
-      });
-    }
-
-    const token = crypto.randomBytes(32).toString("hex");
-
-    await User.findByIdAndUpdate(user._id, {
-      verificationToken: token,
-    });
-
-    const fpLink = `https://globlelms.vercel.app/reset-password/${token}`;
-
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: req.body.email,
-      subject: "Reset Password",
-      html: `
-          <h1>Reset Password</h1>
-
-          <p>Hello ${user.name}, reset your password below:</p>
-
-          <a href="${fpLink}">
-            Reset Password
-          </a>
-        `,
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: "Continue the next step from your email",
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "Process failed",
-    });
+  if (!user) {
+    return res.status(403).send("email invalid");
   }
+  const name = user.name;
+  const email = user.email;
+  //token generation
+  const token = crypto.randomBytes(32).toString("hex");
+
+  const fpLink = `https://globlelms.vercel.app/reset-password/${token}`;
+  const updatedUser = await User.findByIdAndUpdate(
+    user._id,
+    {
+      verificationToken: token,
+    },
+    { new: true }
+  );
+  //email sending procedure
+  await transporter.sendMail({
+    from: email_user,
+    to: req.body.email,
+    subject: "verify your globle lms account",
+    html: `
+      <h1>Welcome to Globle Academy</h1>
+      <br/>
+      <p>This is designed for the purpose of expository profeciency</p>
+      <br/>
+      <p>Hello ${name},Below is the link for the verification link for you to change your password for the email account: ${email} <br/> <br/>
+      Below is the link
+      </p>
+      <a href="${fpLink}">
+        Forgot Password
+      </a>
+      
+      `,
+  });
+  return res.status(201).send({
+    message: "continue the next step from your email",
+  });
 });
-
-/* ================= RESET PASSWORD ================= */
-
 router.post("/reset-password/:token", async (req, res) => {
   try {
     const token = req.params.token;
-
     const newPassword = req.body.password;
 
     const user = await User.findOne({
@@ -275,10 +214,7 @@ router.post("/reset-password/:token", async (req, res) => {
     });
 
     if (!user) {
-      return res.status(403).json({
-        success: false,
-        message: "Invalid token",
-      });
+      return res.status(403).send("token invalid");
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -288,51 +224,326 @@ router.post("/reset-password/:token", async (req, res) => {
       verificationToken: null,
     });
 
-    return res.status(200).json({
-      success: true,
-      message: "Password updated",
-    });
+    return res.status(200).send("Password updated");
   } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "Process failed",
-    });
+    return res.status(500).send("process failed");
   }
 });
 
-/* ================= ME ================= */
-
+//me
 router.get("/me", authMiddleware, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
+  const user = await User.findById(req.user.id);
+  res.send({
+    name: user.name,
+    email: user.email,
+    role: user.role,
+  });
+});
 
-    return res.status(200).json({
-      name: user.name,
-      email: user.email,
-      role: user.role,
+router.get("/admin", authMiddleware, roleMiddleware("admin"), (req, res) => {
+  res.send("welcome admin");
+});
+router.get("/all-users", authMiddleware, roleMiddleware("admin"), async (req, res) => {
+  const users = await User.find();
+  res.send(users);
+});
+
+router.patch("/:id/role", authMiddleware, roleMiddleware("admin"), async (req, res) => {
+  const userId = req.params.id;
+  const newRole = req.body.role;
+  const updatedUser = await User.findByIdAndUpdate(
+    userId,
+    { role: newRole },
+    { new: true }
+  );
+  res.send(updatedUser);
+});
+
+router.patch(
+  "/:id/suspension",
+  authMiddleware,
+  roleMiddleware("admin"),
+  async (req, res) => {
+    const userId = req.params.id;
+    const suspension = req.body.isSuspended;
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { isSuspended: suspension },
+      { new: true }
+    );
+    res.send(updatedUser);
+  }
+);
+
+router.post("/courses", authMiddleware, roleMiddleware("admin"), async (req, res) => {
+  const course = await Course.findOne({ title: req.body.title });
+  if (course) {
+    return res.send("course exists already");
+  } else {
+    const newCourse = await Course.create({
+      title: req.body.title,
+      price: req.body.price,
+      description: req.body.description,
+      thumbnail: req.body.thumbnail,
+      enrolled: 0,
     });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch user",
-    });
+    res.send(newCourse);
   }
 });
 
-/* ================= LOGOUT ================= */
+router.patch(
+  "/courses/:id",
+  authMiddleware,
+  roleMiddleware("admin"),
+  async (req, res) => {
+    const courseId = req.params.id;
+    const newValues = req.body;
+    const updatedCourse = await Course.findByIdAndUpdate(courseId, newValues, {
+      new: true,
+    });
+    res.send(updatedCourse);
+  }
+);
+router.get("/courses", authMiddleware, async (req, res) => {
+  const courses = await Course.find();
+  res.send(courses);
+});
+router.get("/courses/:id", authMiddleware, async (req, res) => {
+  const courseId = req.params.id;
+  const course = await Course.findById(courseId);
+  res.status(200).json({ course: course, success: true });
+});
+router.delete(
+  "/courses/:id",
+  authMiddleware,
+  roleMiddleware("admin"),
+  async (req, res) => {
+    const courseId = req.params.id;
+    const deletedCourse = await Course.findByIdAndDelete(courseId);
+    res.status(200).send(deletedCourse);
+  }
+);
+router.post("/:id/enroll", authMiddleware, async (req, res) => {
+  const courseId = req.params.id;
+  const course = await Course.findById(courseId);
+  if (!course) {
+    return res.send("course not found");
+  }
+  if (!course.isFree) {
+    return res.send("This is a premium course");
+  } else {
+    const userId = req.user.id;
+    const enrollment = await Enrollment.findOne({ userId, courseId });
 
+    if (enrollment) {
+      return res.send("the course already exists");
+    } else {
+      const days = req.body.days;
+      const enrolledAt = new Date();
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + Number(days));
+
+      const newEnrollment = await Enrollment.create({
+        userId: userId,
+        courseId: courseId,
+        enrolledAt: enrolledAt,
+        expiresAt: expiresAt,
+      });
+      res.send(newEnrollment);
+    }
+  }
+});
+
+router.get("/my-courses", authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const enrollment = await Enrollment.find({ userId });
+  if (!enrollment.length) {
+    return res.send("you haven't enrolled in any course");
+  }
+  const courseIds = enrollment.map((item) => item.courseId);
+  const courses = await Course.find({
+    _id: { $in: courseIds },
+  });
+  const results = courses.map((course) => {
+    const match = enrollment.find((item) => {
+      return item.courseId.toString() === course._id.toString();
+    });
+    return {
+      ...course._doc,
+      enrolledAt: match.enrolledAt,
+      expiresAt: match.expiresAt,
+    };
+  });
+  res.send(results);
+});
+
+router.get("/courses/:id/access", authMiddleware, async (req, res) => {
+  const courseId = req.params.id;
+  const userId = req.user.id;
+  const enrollment = await Enrollment.findOne({ courseId, userId });
+  if (!enrollment) {
+    return res.send("invalid request");
+  }
+  const expiresAt = enrollment.expiresAt;
+  const currentdate = new Date();
+  const difference = expiresAt - currentdate;
+  if (difference <= 0) {
+    return res.send("course expired");
+  }
+  const course = await Course.findById(courseId);
+  const lessons = await Lesson.find({ courseId }).sort({ order: 1 });
+
+  res.send({ course, lessons });
+});
+
+router.post(
+  "/courses/:id/lessons",
+  authMiddleware,
+  roleMiddleware("admin"),
+  async (req, res) => {
+    const courseId = req.params.id;
+    const courseExists = await Course.findById(courseId);
+
+    if (!courseExists) {
+      return res.send("this course doesn't exist");
+    }
+    const lessonTitle = req.body.title;
+    const lessonExists = await Lesson.findOne({ courseId, title: lessonTitle });
+    if (lessonExists) {
+      return res.send("this lesson already exists");
+    }
+    const newLesson = await Lesson.create({ courseId, ...req.body });
+    return res.send(newLesson);
+  }
+);
+router.patch(
+  "/lessons/:id",
+  authMiddleware,
+  roleMiddleware("admin"),
+  async (req, res) => {
+    const lessonId = req.params.id;
+    const newValues = req.body;
+    const updatedLesson = await Lesson.findByIdAndUpdate(lessonId, newValues, {
+      new: true,
+    });
+    res.send(updatedLesson);
+  }
+);
+
+router.get(
+  "/courses/:id/lessons",
+  authMiddleware,
+  roleMiddleware("admin"),
+  async (req, res) => {
+    const courseId = req.params.id;
+    const lessons = await Lesson.find({ courseId }).sort({ order: 1 });
+    res.status(200).json({ lesson: lessons, success: true });
+  }
+);
+
+router.get("/courses/:id/preview-lessons", authMiddleware, async (req, res) => {
+  const courseId = req.params.id;
+  const lessons = await Lesson.find({ courseId, isPreview: true }).sort({ order: 1 });
+  res.status(200).json({ lesson: lessons, success: true });
+});
+router.get("/lessons/:id", authMiddleware, roleMiddleware("admin"), async (req, res) => {
+  const lessonId = req.params.id;
+  const lesson = await Lesson.findById(lessonId);
+  res.send(lesson);
+});
+router.delete(
+  "/lessons/:id",
+  authMiddleware,
+  roleMiddleware("admin"),
+  async (req, res) => {
+    const lessonId = req.params.id;
+    const deletedLesson = await Lesson.findByIdAndDelete(lessonId);
+    res.send(deletedLesson);
+  }
+);
+
+router.post(
+  "/courses/:id/grant",
+  authMiddleware,
+  roleMiddleware("admin"),
+  async (req, res) => {
+    const courseId = req.params.id;
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.send("course not found");
+    }
+    const userId = req.body.userId;
+    const enrollment = await Enrollment.findOne({ userId, courseId });
+
+    if (enrollment) {
+      return res.send("the course already exists");
+    } else {
+      const days = req.body.days;
+      const enrolledAt = new Date();
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + Number(days));
+
+      const newEnrollment = await Enrollment.create({
+        userId: userId,
+        courseId: courseId,
+        enrolledAt: enrolledAt,
+        expiresAt: expiresAt,
+      });
+      res.send(newEnrollment);
+    }
+  }
+);
+router.patch(
+  "/courses/:id/grant",
+  authMiddleware,
+  roleMiddleware("admin"),
+  async (req, res) => {
+    const courseId = req.params.id;
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.send("course not found");
+    }
+    const userId = req.body.userId;
+    const enrollment = await Enrollment.findOne({ userId, courseId });
+
+    if (!enrollment) {
+      return res.send("the enrollment doesn't exist");
+    } else {
+      const mode = req.body.mode;
+      const enrollmentId = enrollment._id;
+      let expiresAt = enrollment.expiresAt;
+      if (mode === "addDays") {
+        const days = req.body.days;
+
+        expiresAt.setDate(expiresAt.getDate() + Number(days));
+        //
+      } else if (mode === "setDate") {
+        //
+        expiresAt = new Date(req.body.expiresAt);
+      }
+
+      const updatedEnrollment = await Enrollment.findByIdAndUpdate(
+        enrollmentId,
+        { expiresAt: expiresAt },
+        { new: true }
+      );
+      res.send(updatedEnrollment);
+    }
+  }
+);
 router.post("/logout", (req, res) => {
   res.clearCookie("token", {
     httpOnly: true,
     secure: true,
     sameSite: "none",
+    domain: ".onrender.com",
     path: "/",
   });
 
-  return res.status(200).json({
+  return res.json({
     success: true,
     message: "Logged out",
   });
 });
-
 export default router;
