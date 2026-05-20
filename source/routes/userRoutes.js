@@ -24,7 +24,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-router.post("/register", async (req, res) => {
+router.post("/users/register", async (req, res) => {
   try {
     const existingUser = await User.findOne({ email: req.body.email });
     const hashedPassword = await bcrypt.hash(req.body.password, 10);
@@ -84,7 +84,7 @@ router.post("/register", async (req, res) => {
     return res.status(500).send(error.message);
   }
 });
-router.get("/verify-email/:token", async (req, res) => {
+router.get("/users/verify-email/:token", async (req, res) => {
   const token = req.params.token;
   const checkToken = await User.findOne({ verificationToken: token });
   if (!checkToken) {
@@ -102,7 +102,7 @@ router.get("/verify-email/:token", async (req, res) => {
   res.send("email verified succesfully");
 });
 
-router.post("/login", async (req, res) => {
+router.post("/users/login", async (req, res) => {
   try {
     const user = await User.findOne({ email: req.body.email });
 
