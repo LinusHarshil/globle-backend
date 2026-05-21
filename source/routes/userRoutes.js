@@ -52,7 +52,7 @@ router.post("/register", async (req, res) => {
           "user is already existing and not verified sending verification email"
         );
 
-        const verifyLink = `https://globlelms.vercel.app/verify-email/${token}`;
+        const verifyLink = `https://globle-backend.onrender.com/api/users/verify-email/${token}`;
 
         const user = await User.findByIdAndUpdate(existingUser._id, {
           name: name,
@@ -96,7 +96,7 @@ router.post("/register", async (req, res) => {
         console.log("user couldn't be created");
       }
 
-      const verifyLink = `https://globlelms.vercel.app/verify-email/${token}`;
+      const verifyLink = `https://globle-backend.onrender.com/api/users/verify-email/${token}`;
       console.log("token link has been generated and it is ready for email verification");
 
       try {
@@ -215,7 +215,7 @@ router.post("/forgot-password", async (req, res) => {
   //token generation
   const token = crypto.randomBytes(32).toString("hex");
 
-  const fpLink = `https://globlelms.vercel.app/reset-password/${token}`;
+  const fpLink = `https://globle-backend.onrender.com/api/users/reset-password/${token}`;
   const updatedUser = await User.findByIdAndUpdate(
     user._id,
     {
