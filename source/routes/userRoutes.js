@@ -25,49 +25,86 @@ const transporter = nodemailer.createTransport({
 });
 
 router.post("/register", async (req, res) => {
+  //terms
+  const existingUser = await User.findOne({ email: req.body.email });
+  console.log("email recieved from frontend registration");
+
+  const hashedPassword = await bcrypt.hash(req.body.password, 10);
+  console.log("password recieved from frontend registration");
+
+  const name = req.body.name;
+  console.log("name recieved from frontend registration");
+
+  const token = crypto.randomBytes(32).toString("hex");
+  console.log("token generated from frontend registration");
+
+  console.log("all data recieved from frontend registration");
+
   try {
-    const existingUser = await User.findOne({ email: req.body.email });
-    const hashedPassword = await bcrypt.hash(req.body.password, 10);
-    const name = req.body.name;
-    if (existingUser && existingUser.isVerified) {
-      return res.status(400).send("this user already exists");
-    }
-    const token = crypto.randomBytes(32).toString("hex");
-    if (existingUser && !existingUser.isVerified) {
-      const verifyLink = `https://globlelms.vercel.app/verify-email/${token}`;
-      const user = await User.findByIdAndUpdate(existingUser._id, {
-        name: name,
-        password: hashedPassword,
-        isVerified: false,
-        verificationToken: token,
-      });
-      await transporter.sendMail({
-        from: email_user,
-        to: req.body.email,
-        subject: "Verify your Account",
-        html: `
+    if (existingUser) {
+      console.log("user exists");
+      if (existingUser.isVerified) {
+        console.log("user is already existing and verified");
+
+        return res.status(400).send("this user already exists");
+      } else if (!existingUser.isVerified) {
+        console.log(
+          "user is already existing and not verified sending verification email"
+        );
+
+        const verifyLink = `https://globlelms.vercel.app/verify-email/${token}`;
+
+        const user = await User.findByIdAndUpdate(existingUser._id, {
+          name: name,
+          password: hashedPassword,
+          isVerified: false,
+          verificationToken: token,
+        });
+        try {
+          const mail = await transporter.sendMail({
+            from: email_user,
+            to: req.body.email,
+            subject: "Verify your Account",
+            html: `
       <h1>Welcome to Globle Academy</h1>
       <p>Hello ${name}, Below is the link for the verification of your email for the registration</p>
       <a href="${verifyLink}">
       Verify Email
       </a>`,
-      });
-      return res.send("Verification Email Sent");
-    } else {
-      const user = await User.create({
-        name: name,
-        email: req.body.email,
-        password: hashedPassword,
-        isVerified: false,
-        verificationToken: token,
-      });
-      const verifyLink = `https://globlelms.vercel.app/verify-email/${token}`;
+          });
+          console.log("verification email sent");
+          console.log(mail);
+        } catch (err) {
+          console.log("email could not send, transporter failed");
+        }
 
-      await transporter.sendMail({
-        from: email_user,
-        to: req.body.email,
-        subject: "verify your globle student account",
-        html: `
+        return res.send("Verification Email Sent");
+      }
+    }
+    //for a totally new user
+    else {
+      console.log("its a new user");
+      try {
+        const user = await User.create({
+          name: name,
+          email: req.body.email,
+          password: hashedPassword,
+          isVerified: false,
+          verificationToken: token,
+        });
+      } catch (err) {
+        console.log("user couldn't be created");
+      }
+
+      const verifyLink = `https://globlelms.vercel.app/verify-email/${token}`;
+      console.log("token link has been generated and it is ready for email verification");
+
+      try {
+        const mail = await transporter.sendMail({
+          from: email_user,
+          to: req.body.email,
+          subject: "verify your globle student account",
+          html: `
       <h1>Welcome to Globle Academy</h1>
       <p>Hello ${name},Below is the link for the verification of your email for the registration</p>
       <a href="${verifyLink}">
@@ -75,10 +112,15 @@ router.post("/register", async (req, res) => {
       </a>
       
       `,
-      });
-      return res.send({
-        message: "registered succesfully, check email",
-      });
+        });
+        console.log("verification email sent");
+        console.log(mail);
+        return res.send({
+          message: "registered succesfully, check email",
+        });
+      } catch (err) {
+        console.log("email could not send, transporter failed");
+      }
     }
   } catch (error) {
     return res.status(500).send(error.message);
